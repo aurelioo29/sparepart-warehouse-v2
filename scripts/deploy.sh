@@ -80,9 +80,9 @@ npm run build
 
 echo "→ Restart aplikasi..."
 if pm2 describe "$APP_NAME" >/dev/null 2>&1; then
-  PORT=7001 pm2 restart "$APP_NAME" --update-env
+  PORT=7002 pm2 restart "$APP_NAME" --update-env
 else
-  PORT=7001 pm2 start npm \
+  PORT=7002 pm2 start npm \
     --name "$APP_NAME" \
     --cwd "$APP_DIR" \
     -- start
@@ -97,7 +97,7 @@ for attempt in {1..15}; do
     --silent \
     --output /dev/null \
     --max-time 5 \
-    http://127.0.0.1:7001/login; then
+    http://127.0.0.1:7002/login; then
     HEALTHY=true
     break
   fi
