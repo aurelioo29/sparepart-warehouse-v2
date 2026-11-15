@@ -1,0 +1,1059 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../prisma/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum PurchasePaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum PurchasePaymentMethod {
+  CASH
+  TRANSFER
+  DEBIT
+  CREDIT
+  QRIS
+  OTHER
+}
+
+enum ActivityAction {
+  CREATE
+  UPDATE
+  DELETE
+  DELETE_PERMANENT
+  INACTIVE
+  LOGIN
+  LOGOUT
+  PRINT
+  EXPORT
+}
+
+enum PermissionEffect {
+  ALLOW
+  DENY
+}
+
+enum CustomerType {
+  INDIVIDUAL
+  WORKSHOP
+  STORE
+  RESELLER
+  COMPANY
+  OTHER
+}
+
+enum SalesmanType {
+  INTERNAL
+  FREELANCE
+  RESELLER
+  AGENT
+}
+
+enum CommissionType {
+  NONE
+  PERCENTAGE
+  FIXED
+}
+
+enum StockMovementType {
+  IN
+  OUT
+  ADJUSTMENT
+}
+
+enum StockReferenceType {
+  STOCK_IN
+  STOCK_OUT
+  SALE
+  SALE_RETURN
+  ADJUSTMENT
+}
+
+enum StockInStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum StockOutStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum StockOutReason {
+  INTERNAL_USE
+  DAMAGED
+  LOST
+  RETURN_TO_SUPPLIER
+  OTHER
+}
+
+enum SaleStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+enum SalePaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum SalePaymentMethod {
+  CASH
+  TRANSFER
+  DEBIT
+  CREDIT
+  QRIS
+  OTHER
+}
+
+enum StockAdjustmentStatus {
+  POSTED
+  CANCELLED
+}
+
+enum StockAdjustmentReason {
+  STOCK_OPNAME
+  DAMAGED
+  LOST
+  FOUND
+  INPUT_ERROR
+  OTHER
+}
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  roleId       String    @map("role_id") @db.Uuid
+  fullName     String    @map("full_name") @db.VarChar(150)
+  username     String    @unique @db.VarChar(50)
+  email        String    @unique @db.VarChar(150)
+  phone        String?   @db.VarChar(30)
+  passwordHash String    @map("password_hash") @db.VarChar(255)
+  avatarUrl    String?   @map("avatar_url")
+  isActive     Boolean   @default(true) @map("is_active")
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  role                    Role              @relation(fields: [roleId], references: [id])
+  activityLogs            ActivityLog[]
+  notifications           Notification[]    @relation("NotificationRecipient")
+  actorNotifications      Notification[]    @relation("NotificationActor")
+  salesmen                Salesman[]
+  createdStockIns         StockIn[]         @relation("StockInCreatedBy")
+  createdStockOuts        StockOut[]        @relation("StockOutCreatedBy")
+  createdSales            Sale[]            @relation("SaleCreatedBy")
+  createdSalePayments     SalePayment[]     @relation("SalePaymentCreatedBy")
+  createdStockMovements   StockMovement[]   @relation("StockMovementCreatedBy")
+  createdStockAdjustments StockAdjustment[] @relation("StockAdjustmentCreatedBy")
+  customPermissions       UserPermission[]
+  createdPurchasePayments PurchasePayment[] @relation("PurchasePaymentCreatedBy")
+  createdKngOrders        KngOrder[]        @relation("KngOrderCreatedBy")
+
+  @@map("users")
+}
+
+model UserPermission {
+  id           String           @id @default(uuid()) @db.Uuid
+  userId       String           @map("user_id") @db.Uuid
+  permissionId String           @map("permission_id") @db.Uuid
+  effect       PermissionEffect @default(ALLOW)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, permissionId])
+  @@index([userId])
+  @@index([permissionId])
+  @@map("user_permissions")
+}
+
+model Role {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  slug        String   @unique @db.VarChar(100)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  users           User[]
+  rolePermissions RolePermission[]
+
+  @@map("roles")
+}
+
+model Permission {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @db.VarChar(150)
+  key       String   @unique @db.VarChar(150)
+  module    String   @db.VarChar(100)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  rolePermissions RolePermission[]
+  userPermissions UserPermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  id           String   @id @default(uuid()) @db.Uuid
+  roleId       String   @map("role_id") @db.Uuid
+  permissionId String   @map("permission_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  role       Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@unique([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+model ActivityLog {
+  id           String         @id @default(uuid()) @db.Uuid
+  userId       String?        @map("user_id") @db.Uuid
+  action       ActivityAction
+  module       String         @db.VarChar(100)
+  resourceType String?        @map("resource_type") @db.VarChar(100)
+  resourceId   String?        @map("resource_id") @db.Uuid
+  oldData      Json?          @map("old_data")
+  newData      Json?          @map("new_data")
+  ipAddress    String?        @map("ip_address") @db.VarChar(100)
+  userAgent    String?        @map("user_agent")
+  createdAt    DateTime       @default(now()) @map("created_at")
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@map("activity_logs")
+}
+
+model Notification {
+  id              String   @id @default(uuid()) @db.Uuid
+  recipientUserId String   @map("recipient_user_id") @db.Uuid
+  actorUserId     String?  @map("actor_user_id") @db.Uuid
+  title           String   @db.VarChar(150)
+  message         String
+  eventType       String   @map("event_type") @db.VarChar(50)
+  module          String   @db.VarChar(100)
+  relatedId       String?  @map("related_id") @db.Uuid
+  isRead          Boolean  @default(false) @map("is_read")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  recipient User  @relation("NotificationRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+  actor     User? @relation("NotificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@map("notifications")
+}
+
+model WarehouseInfo {
+  id            String   @id @default(uuid()) @db.Uuid
+  storeName     String   @map("store_name") @db.VarChar(150)
+  ownerName     String?  @map("owner_name") @db.VarChar(150)
+  logoUrl       String?  @map("logo_url")
+  phone         String?  @db.VarChar(30)
+  email         String?  @db.VarChar(150)
+  address       String?
+  city          String?  @db.VarChar(100)
+  province      String?  @db.VarChar(100)
+  postalCode    String?  @map("postal_code") @db.VarChar(20)
+  invoiceFooter String?  @map("invoice_footer")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  bankAccounts WarehouseBankAccount[]
+
+  @@map("warehouse_infos")
+}
+
+model WarehouseBankAccount {
+  id              String   @id @default(uuid()) @db.Uuid
+  warehouseInfoId String   @map("warehouse_info_id") @db.Uuid
+  bankName        String   @map("bank_name") @db.VarChar(100)
+  accountNumber   String   @map("account_number") @db.VarChar(100)
+  logoUrl         String?  @map("logo_url")
+  sortOrder       Int      @default(0) @map("sort_order")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  warehouseInfo WarehouseInfo @relation(fields: [warehouseInfoId], references: [id], onDelete: Cascade)
+
+  @@index([warehouseInfoId])
+  @@map("warehouse_bank_accounts")
+}
+
+model GeneralSetting {
+  id          String   @id @default(uuid()) @db.Uuid
+  key         String   @unique @db.VarChar(150)
+  value       Json
+  type        String   @db.VarChar(50)
+  group       String   @db.VarChar(100)
+  description String?
+  isPublic    Boolean  @default(false) @map("is_public")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("general_settings")
+}
+
+model Category {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(150)
+  slug        String   @unique @db.VarChar(150)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("categories")
+}
+
+model Brand {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(150)
+  slug        String   @unique @db.VarChar(150)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("brands")
+}
+
+model Unit {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(100)
+  shortName   String   @unique @map("short_name") @db.VarChar(30)
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  products Product[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("units")
+}
+
+model Supplier {
+  id            String   @id @default(uuid()) @db.Uuid
+  name          String   @db.VarChar(150)
+  phone         String?  @db.VarChar(30)
+  email         String?  @db.VarChar(150)
+  address       String?
+  contactPerson String?  @map("contact_person") @db.VarChar(150)
+  description   String?
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  products         Product[]
+  stockIns         StockIn[]
+  purchasePayments PurchasePayment[]
+
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+  @@index([isActive])
+  @@map("suppliers")
+}
+
+model Warehouse {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @db.VarChar(150)
+  code        String   @unique @db.VarChar(50)
+  address     String?
+  description String?
+  isActive    Boolean  @default(true) @map("is_active")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  rackLocations        RackLocation[]
+  products             Product[]
+  stockInItems         StockInItem[]
+  stockOutItems        StockOutItem[]
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+  stockAdjustmentItems StockAdjustmentItem[]
+
+  @@index([name])
+  @@index([isActive])
+  @@map("warehouses")
+}
+
+model RackLocation {
+  id           String   @id @default(uuid()) @db.Uuid
+  warehouseId  String   @map("warehouse_id") @db.Uuid
+  name         String   @db.VarChar(150)
+  code         String   @unique @db.VarChar(50)
+  barcodeValue String?  @unique @map("barcode_value")
+  description  String?
+  isActive     Boolean  @default(true) @map("is_active")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  warehouse            Warehouse             @relation(fields: [warehouseId], references: [id], onDelete: Restrict)
+  products             Product[]
+  stockInItems         StockInItem[]
+  stockOutItems        StockOutItem[]
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+  stockAdjustmentItems StockAdjustmentItem[]
+
+  @@index([warehouseId])
+  @@index([name])
+  @@index([isActive])
+  @@map("rack_locations")
+}
+
+model Customer {
+  id              String       @id @default(uuid()) @db.Uuid
+  name            String       @db.VarChar(150)
+  customerType    CustomerType @default(INDIVIDUAL) @map("customer_type")
+  phone           String?      @db.VarChar(30)
+  email           String?      @db.VarChar(150)
+  address         String?
+  creditLimit     Decimal?     @map("credit_limit") @db.Decimal(18, 2)
+  paymentTermDays Int?         @map("payment_term_days")
+  description     String?
+  isActive        Boolean      @default(true) @map("is_active")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  sales Sale[]
+
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+  @@index([customerType])
+  @@index([isActive])
+  @@map("customers")
+}
+
+model Salesman {
+  id              String         @id @default(uuid()) @db.Uuid
+  userId          String?        @map("user_id") @db.Uuid
+  code            String         @unique @db.VarChar(50)
+  name            String         @db.VarChar(150)
+  salesmanType    SalesmanType   @default(FREELANCE) @map("salesman_type")
+  phone           String?        @db.VarChar(30)
+  email           String?        @db.VarChar(150)
+  address         String?
+  commissionType  CommissionType @default(NONE) @map("commission_type")
+  commissionValue Decimal?       @map("commission_value") @db.Decimal(18, 2)
+  joinDate        DateTime?      @map("join_date") @db.Date
+  description     String?
+  isActive        Boolean        @default(true) @map("is_active")
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  user  User?  @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sales Sale[]
+
+  @@index([userId])
+  @@index([name])
+  @@index([phone])
+  @@index([email])
+  @@index([salesmanType])
+  @@index([isActive])
+  @@map("salesmen")
+}
+
+model Product {
+  id String @id @default(uuid()) @db.Uuid
+
+  categoryId     String? @map("category_id") @db.Uuid
+  brandId        String? @map("brand_id") @db.Uuid
+  unitId         String  @map("unit_id") @db.Uuid
+  supplierId     String? @map("supplier_id") @db.Uuid
+  warehouseId    String? @map("warehouse_id") @db.Uuid
+  rackLocationId String? @map("rack_location_id") @db.Uuid
+
+  sku     String  @unique @db.VarChar(80)
+  barcode String? @unique @db.VarChar(120)
+  name    String  @db.VarChar(200)
+  slug    String  @unique @db.VarChar(220)
+
+  purchasePrice Decimal @default(0) @map("purchase_price") @db.Decimal(18, 2)
+  sellingPrice  Decimal @default(0) @map("selling_price") @db.Decimal(18, 2)
+
+  currentStock Int @default(0) @map("current_stock")
+  minStock     Int @default(0) @map("min_stock")
+
+  imageUrl    String? @map("image_url")
+  description String?
+  isActive    Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  category     Category?     @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  brand        Brand?        @relation(fields: [brandId], references: [id], onDelete: SetNull)
+  unit         Unit          @relation(fields: [unitId], references: [id], onDelete: Restrict)
+  supplier     Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  rackLocation RackLocation? @relation(fields: [rackLocationId], references: [id], onDelete: SetNull)
+
+  stockInItems         StockInItem[]
+  stockOutItems        StockOutItem[]
+  saleItems            SaleItem[]
+  stockMovements       StockMovement[]
+  stockAdjustmentItems StockAdjustmentItem[]
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([unitId])
+  @@index([supplierId])
+  @@index([warehouseId])
+  @@index([rackLocationId])
+  @@index([name])
+  @@index([sku])
+  @@index([barcode])
+  @@index([isActive])
+  @@map("products")
+}
+
+model StockIn {
+  id         String  @id @default(uuid()) @db.Uuid
+  supplierId String? @map("supplier_id") @db.Uuid
+
+  documentNumber String        @unique @map("document_number") @db.VarChar(100)
+  invoiceNumber  String?       @map("invoice_number") @db.VarChar(100)
+  stockInDate    DateTime      @map("stock_in_date") @db.Date
+  status         StockInStatus @default(POSTED)
+
+  totalAmount     Decimal @default(0) @map("total_amount") @db.Decimal(18, 2)
+  paidAmount      Decimal @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  remainingAmount Decimal @default(0) @map("remaining_amount") @db.Decimal(18, 2)
+
+  paymentStatus PurchasePaymentStatus @default(UNPAID) @map("payment_status")
+  dueDate       DateTime?             @map("due_date") @db.Date
+
+  notes String?
+
+  createdById String    @map("created_by_id") @db.Uuid
+  postedAt    DateTime? @map("posted_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  supplier  Supplier?         @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdBy User              @relation("StockInCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  items     StockInItem[]
+  payments  PurchasePayment[]
+
+  @@index([supplierId])
+  @@index([documentNumber])
+  @@index([invoiceNumber])
+  @@index([stockInDate])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([dueDate])
+  @@index([createdById])
+  @@map("stock_ins")
+}
+
+model StockInItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  stockInId      String  @map("stock_in_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  warehouseId    String? @map("warehouse_id") @db.Uuid
+  rackLocationId String? @map("rack_location_id") @db.Uuid
+
+  quantity   Int
+  unitPrice  Decimal @default(0) @map("unit_price") @db.Decimal(18, 2)
+  totalPrice Decimal @default(0) @map("total_price") @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stockIn      StockIn       @relation(fields: [stockInId], references: [id], onDelete: Cascade)
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  rackLocation RackLocation? @relation(fields: [rackLocationId], references: [id], onDelete: SetNull)
+
+  @@index([stockInId])
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([rackLocationId])
+  @@map("stock_in_items")
+}
+
+model StockOut {
+  id String @id @default(uuid()) @db.Uuid
+
+  documentNumber String   @unique @map("document_number") @db.VarChar(100)
+  stockOutDate   DateTime @map("stock_out_date") @db.Date
+
+  reason StockOutReason @default(OTHER)
+  status StockOutStatus @default(POSTED)
+
+  totalAmount Decimal @default(0) @map("total_amount") @db.Decimal(18, 2)
+  notes       String?
+
+  createdById String    @map("created_by_id") @db.Uuid
+  postedAt    DateTime? @map("posted_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy User           @relation("StockOutCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  items     StockOutItem[]
+
+  @@index([documentNumber])
+  @@index([stockOutDate])
+  @@index([reason])
+  @@index([status])
+  @@index([createdById])
+  @@map("stock_outs")
+}
+
+model StockOutItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  stockOutId     String  @map("stock_out_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  warehouseId    String? @map("warehouse_id") @db.Uuid
+  rackLocationId String? @map("rack_location_id") @db.Uuid
+
+  quantity   Int
+  unitPrice  Decimal @default(0) @map("unit_price") @db.Decimal(18, 2)
+  totalPrice Decimal @default(0) @map("total_price") @db.Decimal(18, 2)
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stockOut     StockOut      @relation(fields: [stockOutId], references: [id], onDelete: Cascade)
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  rackLocation RackLocation? @relation(fields: [rackLocationId], references: [id], onDelete: SetNull)
+
+  @@index([stockOutId])
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([rackLocationId])
+  @@map("stock_out_items")
+}
+
+model Sale {
+  id         String  @id @default(uuid()) @db.Uuid
+  customerId String? @map("customer_id") @db.Uuid
+  salesmanId String? @map("salesman_id") @db.Uuid
+
+  invoiceNumber String   @unique @map("invoice_number") @db.VarChar(100)
+  saleDate      DateTime @map("sale_date") @db.Date
+
+  status        SaleStatus        @default(POSTED)
+  paymentStatus SalePaymentStatus @default(UNPAID) @map("payment_status")
+
+  subtotal        Decimal @default(0) @db.Decimal(18, 2)
+  discountAmount  Decimal @default(0) @map("discount_amount") @db.Decimal(18, 2)
+  totalAmount     Decimal @default(0) @map("total_amount") @db.Decimal(18, 2)
+  paidAmount      Decimal @default(0) @map("paid_amount") @db.Decimal(18, 2)
+  remainingAmount Decimal @default(0) @map("remaining_amount") @db.Decimal(18, 2)
+
+  dueDate DateTime? @map("due_date") @db.Date
+  notes   String?
+
+  createdById String    @map("created_by_id") @db.Uuid
+  postedAt    DateTime? @map("posted_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  customer  Customer? @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  salesman  Salesman? @relation(fields: [salesmanId], references: [id], onDelete: SetNull)
+  createdBy User      @relation("SaleCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  items    SaleItem[]
+  payments SalePayment[]
+
+  @@index([customerId])
+  @@index([salesmanId])
+  @@index([invoiceNumber])
+  @@index([saleDate])
+  @@index([status])
+  @@index([paymentStatus])
+  @@index([dueDate])
+  @@index([createdById])
+  @@map("sales")
+}
+
+model SaleItem {
+  id             String  @id @default(uuid()) @db.Uuid
+  saleId         String  @map("sale_id") @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  warehouseId    String? @map("warehouse_id") @db.Uuid
+  rackLocationId String? @map("rack_location_id") @db.Uuid
+
+  quantity  Int
+  unitPrice Decimal @default(0) @map("unit_price") @db.Decimal(18, 2)
+
+  // =========================
+  // DISCOUNT
+  // =========================
+
+  // Diskon utama
+  // Contoh: 30%
+  discountPercent Decimal @default(0) @map("discount_percent") @db.Decimal(5, 2)
+
+  // Berapa qty yang terkena diskon utama
+  // Contoh:
+  // quantity = 10
+  // discountQty = 5
+  // berarti hanya 5 pcs yang terkena discountPercent
+  discountQty Int @default(0) @map("discount_qty")
+
+  // Extra Discount 1
+  // Dihitung setelah diskon utama
+  // Contoh: +10%
+  additionalDiscountPercent Decimal @default(0) @map("additional_discount_percent") @db.Decimal(5, 2)
+
+  // Extra Discount 2
+  // Dihitung setelah Extra Discount 1
+  // Contoh: +5%
+  additionalDiscountPercent2 Decimal @default(0) @map("additional_discount_percent_2") @db.Decimal(5, 2)
+
+  // Total nominal seluruh diskon
+  // main discount + extra 1 + extra 2
+  discountAmount Decimal @default(0) @map("discount_amount") @db.Decimal(18, 2)
+
+  // Total akhir item setelah seluruh diskon
+  totalPrice Decimal @default(0) @map("total_price") @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sale         Sale          @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  rackLocation RackLocation? @relation(fields: [rackLocationId], references: [id], onDelete: SetNull)
+
+  @@index([saleId])
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([rackLocationId])
+  @@map("sale_items")
+}
+
+model SalePayment {
+  id     String @id @default(uuid()) @db.Uuid
+  saleId String @map("sale_id") @db.Uuid
+
+  paymentDate DateTime @map("payment_date") @db.Date
+  amount      Decimal  @db.Decimal(18, 2)
+
+  // Diskon pelunasan cepat dalam persen.
+  // Contoh: sisa Rp1.000.000, discountPercent 10 = discountAmount Rp100.000.
+  discountPercent Decimal @default(0) @map("discount_percent") @db.Decimal(5, 2)
+  discountAmount  Decimal @default(0) @map("discount_amount") @db.Decimal(18, 2)
+
+  method SalePaymentMethod @default(CASH)
+
+  referenceNumber String? @map("reference_number") @db.VarChar(100)
+  notes           String?
+
+  createdById String @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  sale      Sale @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  createdBy User @relation("SalePaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([saleId])
+  @@index([paymentDate])
+  @@index([discountPercent])
+  @@index([method])
+  @@index([createdById])
+  @@map("sale_payments")
+}
+
+model StockMovement {
+  id             String  @id @default(uuid()) @db.Uuid
+  productId      String  @map("product_id") @db.Uuid
+  warehouseId    String? @map("warehouse_id") @db.Uuid
+  rackLocationId String? @map("rack_location_id") @db.Uuid
+
+  type     StockMovementType
+  quantity Int
+
+  stockBefore Int @map("stock_before")
+  stockAfter  Int @map("stock_after")
+
+  referenceType StockReferenceType @map("reference_type")
+  referenceId   String?            @map("reference_id") @db.Uuid
+
+  notes       String?
+  createdById String  @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  product      Product       @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse    Warehouse?    @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  rackLocation RackLocation? @relation(fields: [rackLocationId], references: [id], onDelete: SetNull)
+  createdBy    User          @relation("StockMovementCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([rackLocationId])
+  @@index([type])
+  @@index([referenceType])
+  @@index([referenceId])
+  @@index([createdById])
+  @@index([createdAt])
+  @@map("stock_movements")
+}
+
+model StockAdjustment {
+  id             String                @id @default(uuid()) @db.Uuid
+  documentNumber String                @unique @map("document_number") @db.VarChar(100)
+  adjustmentDate DateTime              @map("adjustment_date") @db.Date
+  reason         StockAdjustmentReason @default(OTHER)
+  status         StockAdjustmentStatus @default(POSTED)
+  notes          String?
+
+  createdById String    @map("created_by_id") @db.Uuid
+  postedAt    DateTime? @map("posted_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy User                  @relation("StockAdjustmentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  items     StockAdjustmentItem[]
+
+  @@index([documentNumber])
+  @@index([adjustmentDate])
+  @@index([reason])
+  @@index([status])
+  @@index([createdById])
+  @@map("stock_adjustments")
+}
+
+model StockAdjustmentItem {
+  id                String  @id @default(uuid()) @db.Uuid
+  stockAdjustmentId String  @map("stock_adjustment_id") @db.Uuid
+  productId         String  @map("product_id") @db.Uuid
+  warehouseId       String? @map("warehouse_id") @db.Uuid
+  rackLocationId    String? @map("rack_location_id") @db.Uuid
+
+  stockBefore Int @map("stock_before")
+  stockAfter  Int @map("stock_after")
+  difference  Int
+
+  notes String?
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stockAdjustment StockAdjustment @relation(fields: [stockAdjustmentId], references: [id], onDelete: Cascade)
+  product         Product         @relation(fields: [productId], references: [id], onDelete: Restrict)
+  warehouse       Warehouse?      @relation(fields: [warehouseId], references: [id], onDelete: SetNull)
+  rackLocation    RackLocation?   @relation(fields: [rackLocationId], references: [id], onDelete: SetNull)
+
+  @@index([stockAdjustmentId])
+  @@index([productId])
+  @@index([warehouseId])
+  @@index([rackLocationId])
+  @@map("stock_adjustment_items")
+}
+
+model PurchasePayment {
+  id         String  @id @default(uuid()) @db.Uuid
+  stockInId  String  @map("stock_in_id") @db.Uuid
+  supplierId String? @map("supplier_id") @db.Uuid
+
+  paymentDate DateTime              @map("payment_date") @db.Date
+  amount      Decimal               @db.Decimal(18, 2)
+  method      PurchasePaymentMethod @default(CASH)
+
+  referenceNumber String? @map("reference_number") @db.VarChar(100)
+  notes           String?
+
+  createdById String @map("created_by_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stockIn     StockIn                     @relation(fields: [stockInId], references: [id], onDelete: Cascade)
+  supplier    Supplier?                   @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdBy   User                        @relation("PurchasePaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  attachments PurchasePaymentAttachment[]
+
+  @@index([stockInId])
+  @@index([supplierId])
+  @@index([paymentDate])
+  @@index([method])
+  @@index([createdById])
+  @@map("purchase_payments")
+}
+
+model PurchasePaymentAttachment {
+  id                String @id @default(uuid()) @db.Uuid
+  purchasePaymentId String @map("purchase_payment_id") @db.Uuid
+
+  fileName     String @map("file_name")
+  originalName String @map("original_name")
+  mimeType     String @map("mime_type")
+  size         Int
+  fileUrl      String @map("file_url")
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  purchasePayment PurchasePayment @relation(fields: [purchasePaymentId], references: [id], onDelete: Cascade)
+
+  @@index([purchasePaymentId])
+  @@map("purchase_payment_attachments")
+}
+
+enum KngOrderStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+}
+
+model KngProduct {
+  id String @id @default(uuid()) @db.Uuid
+
+  jenis      String  @db.VarChar(150)
+  partNumber String  @map("part_number") @db.VarChar(200)
+  hargaJkt   Decimal @default(0) @map("harga_jkt") @db.Decimal(18, 2)
+
+  isActive Boolean @default(true) @map("is_active")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  orderItems KngOrderItem[]
+
+  @@unique([jenis, partNumber])
+  @@index([jenis])
+  @@index([partNumber])
+  @@index([isActive])
+  @@map("kng_products")
+}
+
+model KngOrder {
+  id String @id @default(uuid()) @db.Uuid
+
+  orderNumber String   @unique @map("order_number") @db.VarChar(100)
+  orderDate   DateTime @map("order_date") @db.Date
+
+  discountPercent Decimal @default(30) @map("discount_percent") @db.Decimal(5, 2)
+
+  totalQty    Int     @default(0) @map("total_qty")
+  totalAmount Decimal @default(0) @map("total_amount") @db.Decimal(18, 2)
+
+  status KngOrderStatus @default(POSTED)
+
+  noteFranco String? @default("Frangko Medan") @map("note_franco")
+  noteTop    String? @default("Top = 125 hari") @map("note_top")
+  notes      String?
+
+  createdById String @map("created_by_id") @db.Uuid
+
+  postedAt    DateTime? @map("posted_at")
+  cancelledAt DateTime? @map("cancelled_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  createdBy User           @relation("KngOrderCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  items     KngOrderItem[]
+
+  @@index([orderNumber])
+  @@index([orderDate])
+  @@index([status])
+  @@index([createdById])
+  @@map("kng_orders")
+}
+
+model KngOrderItem {
+  id String @id @default(uuid()) @db.Uuid
+
+  kngOrderId   String @map("kng_order_id") @db.Uuid
+  kngProductId String @map("kng_product_id") @db.Uuid
+
+  jenisSnapshot      String @map("jenis_snapshot") @db.VarChar(150)
+  partNumberSnapshot String @map("part_number_snapshot") @db.VarChar(200)
+
+  hargaJkt   Decimal @default(0) @map("harga_jkt") @db.Decimal(18, 2)
+  hargaNetto Decimal @default(0) @map("harga_netto") @db.Decimal(18, 2)
+
+  quantity    Int     @default(1)
+  totalAmount Decimal @default(0) @map("total_amount") @db.Decimal(18, 2)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  order   KngOrder   @relation(fields: [kngOrderId], references: [id], onDelete: Cascade)
+  product KngProduct @relation(fields: [kngProductId], references: [id], onDelete: Restrict)
+
+  @@index([kngOrderId])
+  @@index([kngProductId])
+  @@map("kng_order_items")
+}
+
+model InventoryMonthlySnapshot {
+  id         String   @id @default(uuid()) @db.Uuid
+  period     String   @unique @db.VarChar(7)
+  cutoffAt   DateTime @map("cutoff_at")
+  capturedAt DateTime @default(now()) @map("captured_at")
+
+  items InventoryMonthlySnapshotItem[]
+
+  @@map("inventory_monthly_snapshots")
+}
+
+model InventoryMonthlySnapshotItem {
+  id          String  @id @default(uuid()) @db.Uuid
+  snapshotId  String  @map("snapshot_id") @db.Uuid
+  productId   String  @map("product_id") @db.Uuid
+  categoryId  String? @map("category_id") @db.Uuid
+  brandId     String? @map("brand_id") @db.Uuid
+  warehouseId String? @map("warehouse_id") @db.Uuid
+
+  closingStock Int @map("closing_stock")
+
+  // Salinan field laporan ketika snapshot dibuat.
+  data Json
+
+  snapshot InventoryMonthlySnapshot @relation( fields: [snapshotId], references: [id], onDelete: Restrict)
+
+  @@unique([snapshotId, productId])
+  @@index([snapshotId, categoryId])
+  @@index([snapshotId, brandId])
+  @@index([snapshotId, warehouseId])
+  @@map("inventory_monthly_snapshot_items")
+}
