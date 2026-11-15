@@ -58,8 +58,8 @@ deploy_server() {
     'bash -se' <<'REMOTE'
 set -euo pipefail
 
-APP_DIR="/var/www/sparepart-warehouse-v2"
-APP_NAME="sparepart-warehouse-v2"
+APP_DIR="/var/www/battery-warehouse-v2"
+APP_NAME="battery-warehouse-v2"
 
 cd "$APP_DIR"
 
