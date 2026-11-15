@@ -8,7 +8,7 @@ DEPLOY_USER="${DEPLOY_USER:-deploy}"
 DEPLOY_PORT="${DEPLOY_PORT:-22}"
 DEPLOY_KEY="${DEPLOY_KEY:-$HOME/.ssh/sparepart-vps-key.pem}"
 
-APP_DIR="/var/www/sparepart-warehouse-v2"
+APP_DIR="/var/www/battery-warehouse-v2"
 
 # Selalu jalankan dari folder utama proyek.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

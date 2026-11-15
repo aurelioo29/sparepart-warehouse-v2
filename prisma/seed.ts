@@ -937,65 +937,90 @@ async function seedRolePermissions(
   ]);
 }
 
-async function seedUsers(
-  roles: Record<string, Awaited<ReturnType<typeof prisma.role.upsert>>>,
-) {
-  const passwordHash = await bcrypt.hash("password123", 12);
+async function seedSuperadminOnce() {
+  const username = "superadmin";
+  const existingUser = await prisma.user.findUnique({
+    where: { username },
+    select: { id: true },
+  });
 
-  const users = [
-    {
-      roleId: roles.superadmin.id,
-      fullName: "Superadmin",
-      username: "superadmin",
-      email: "superadmin@example.com",
-      phone: "08123456789",
-    },
-    {
-      roleId: roles.owner.id,
-      fullName: "Owner",
-      username: "owner",
-      email: "owner@example.com",
-      phone: "08123456780",
-    },
-    {
-      roleId: roles["admin-gudang"].id,
-      fullName: "Admin Gudang",
-      username: "admingudang",
-      email: "admingudang@example.com",
-      phone: "08123456781",
-    },
-    {
-      roleId: roles["staff-gudang"].id,
-      fullName: "Staff Gudang",
-      username: "staffgudang",
-      email: "staffgudang@example.com",
-      phone: "08123456782",
-    },
-  ];
+  if (existingUser) {
+    console.log("Akun superadmin sudah ada. Pembuatan akun dilewati.");
+    return;
+  }
 
-  for (const user of users) {
-    await prisma.user.upsert({
-      where: {
-        username: user.username,
-      },
-      update: {
-        roleId: user.roleId,
-        fullName: user.fullName,
-        email: user.email,
-        phone: user.phone,
-        isActive: true,
-      },
+  const email = process.env.SUPERADMIN_EMAIL?.trim();
+  const password = process.env.SUPERADMIN_PASSWORD;
+
+  if (!email || !password) {
+    throw new Error(
+      "Isi SUPERADMIN_EMAIL dan SUPERADMIN_PASSWORD terlebih dahulu.",
+    );
+  }
+
+  if (password.length < 12 || Buffer.byteLength(password, "utf8") > 72) {
+    throw new Error("Password minimal 12 karakter dan maksimal 72 byte.");
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  const created = await prisma.$transaction(async (tx) => {
+    const role = await tx.role.upsert({
+      where: { slug: "superadmin" },
+      update: {},
       create: {
-        roleId: user.roleId,
-        fullName: user.fullName,
-        username: user.username,
-        email: user.email,
-        phone: user.phone,
-        passwordHash,
+        name: "Superadmin",
+        slug: "superadmin",
+        description: "Full access to all system features",
         isActive: true,
       },
     });
-  }
+
+    const allPermissions = await tx.permission.findMany({
+      select: { id: true },
+    });
+
+    await tx.rolePermission.createMany({
+      data: allPermissions.map(({ id }) => ({
+        roleId: role.id,
+        permissionId: id,
+      })),
+      skipDuplicates: true,
+    });
+
+    const result = await tx.user.createMany({
+      data: [
+        {
+          roleId: role.id,
+          fullName: "Superadmin",
+          username,
+          email,
+          passwordHash,
+          isActive: true,
+        },
+      ],
+      skipDuplicates: true,
+    });
+
+    if (result.count === 1) return true;
+
+    const account = await tx.user.findUnique({
+      where: { username },
+      select: { id: true },
+    });
+
+    if (!account) {
+      throw new Error("Akun gagal dibuat. Periksa apakah email sudah dipakai.");
+    }
+
+    return false;
+  });
+
+  console.log(
+    created
+      ? "Akun superadmin berhasil dibuat."
+      : "Akun superadmin sudah ada. Pembuatan akun dilewati.",
+  );
 }
 
 async function seedWarehouseInfo() {
@@ -1503,50 +1528,37 @@ async function seedKngProducts() {
 }
 
 async function main() {
-  console.log("Start seeding...");
+  const bootstrapSuperadmin = process.argv.includes("--bootstrap-superadmin");
 
-  // const roles = await seedRoles();
-  // console.log("Roles seeded");
+  if (bootstrapSuperadmin) {
+    const [target] = await prisma.$queryRaw<
+      Array<{ database_name: string; role_name: string }>
+    >`SELECT current_database() AS database_name, current_user AS role_name`;
+
+    if (
+      target?.database_name !== "battery_warehouse" ||
+      target.role_name !== "battery_app"
+    ) {
+      throw new Error(
+        "Bootstrap hanya bisa dijalankan pada database Battery dengan user battery_app.",
+      );
+    }
+  }
 
   await seedPermissions();
-  console.log("Permissions seeded");
-  console.log("Seed completed");
 
-  // await seedRolePermissions(roles);
-  // console.log("Role permissions synced");
+  if (bootstrapSuperadmin) {
+    await seedSuperadminOnce();
+  }
 
-  // await seedUsers(roles);
-  // console.log("Users seeded");
-
-  // await seedWarehouseInfo();
-  // console.log("Warehouse info seeded");
-
-  // await seedGeneralSettings();
-  // console.log("General settings seeded");
-
-  // await seedMasterData();
-  // console.log("Master data seeded");
-
-  // await seedKngProducts();
-  // console.log("KNG products seeded");
-
-  // console.log("Seed completed");
-  // console.log("---------------------------------------");
-  // console.log("Default password for all seeded users:");
-  // console.log("Password : password123");
-  // console.log("---------------------------------------");
-  // console.log("Superadmin : superadmin / superadmin@example.com");
-  // console.log("Owner      : owner / owner@example.com");
-  // console.log("Admin      : admingudang / admingudang@example.com");
-  // console.log("Staff      : staffgudang / staffgudang@example.com");
-  // console.log("---------------------------------------");
+  console.log("Seed completed.");
 }
 
 main()
   .catch((error) => {
     console.error("Seed failed");
     console.error(error);
-    process.exit(1);
+    process.exitCode = 1;
   })
   .finally(async () => {
     await prisma.$disconnect();
