@@ -41,6 +41,7 @@ type NotificationItem = {
 };
 
 type DashboardHeaderProps = {
+  siteName: string;
   userName?: string | null;
   roleName?: string | null;
 };
@@ -53,7 +54,10 @@ function getEventColor(eventType: string) {
   return "bg-slate-400";
 }
 
-export default function DashboardHeader({ userName }: DashboardHeaderProps) {
+export default function DashboardHeader({
+  siteName,
+  userName,
+}: DashboardHeaderProps) {
   const router = useRouter();
   const [modal, contextHolder] = Modal.useModal();
 
@@ -254,18 +258,19 @@ export default function DashboardHeader({ userName }: DashboardHeaderProps) {
 
       <Header
         className="!sticky !top-0 !z-40 !h-12 !bg-[#001f33] !px-0"
-        style={{
-          lineHeight: "normal",
-        }}
+        style={{ lineHeight: "normal" }}
       >
         <div className="flex h-full items-center justify-between">
-          <div className="flex h-full items-center px-4">
-            <div className="text-sm font-semibold text-white">
-              Sparepart Warehouse
+          <div className="flex h-full min-w-0 items-center px-4">
+            <div
+              className="truncate text-sm font-semibold text-white"
+              title={siteName}
+            >
+              {siteName}
             </div>
           </div>
 
-          <div className="flex h-full items-center">
+          <div className="flex h-full shrink-0 items-center">
             <Dropdown
               popupRender={() => notificationDropdown}
               placement="bottomRight"

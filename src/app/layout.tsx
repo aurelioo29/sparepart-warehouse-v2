@@ -2,56 +2,45 @@ import type { Metadata } from "next";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { App, ConfigProvider } from "antd";
 
-import { prisma } from "@/lib/prisma";
+import {
+  getWarehouseInfoForLayout,
+  getWarehouseSiteName,
+} from "@/lib/warehouse-branding";
 
 import "./globals.css";
 
-async function getWarehouseInfoForLayout() {
-  try {
-    const warehouseInfo = await prisma.warehouseInfo.findFirst({
-      orderBy: {
-        createdAt: "asc",
-      },
-      select: {
-        storeName: true,
-        logoUrl: true,
-        city: true,
-        province: true,
-        updatedAt: true,
-      },
-    });
-
-    return warehouseInfo;
-  } catch (error) {
-    console.error("Failed to load warehouse info for layout:", error);
-    return null;
-  }
-}
-
-function getAbsoluteUrl(value?: string | null) {
-  if (!value) return "";
-
-  if (value.startsWith("http://") || value.startsWith("https://")) {
-    return value;
-  }
+function getLogoUrl(value?: string | null, updatedAt?: Date | null) {
+  const logoUrl = value?.trim();
+  if (!logoUrl) return undefined;
 
   const appUrl =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXTAUTH_URL ||
-    process.env.VERCEL_URL ||
-    "";
+    process.env.NEXT_PUBLIC_APP_URL?.trim() ||
+    process.env.AUTH_URL?.trim() ||
+    process.env.NEXTAUTH_URL?.trim() ||
+    process.env.VERCEL_URL?.trim();
 
-  if (!appUrl) return value;
+  const baseUrl = appUrl
+    ? /^https?:\/\//i.test(appUrl)
+      ? appUrl
+      : `https://${appUrl}`
+    : undefined;
 
-  const baseUrl = appUrl.startsWith("http") ? appUrl : `https://${appUrl}`;
+  try {
+    const url = new URL(logoUrl, baseUrl);
 
-  return `${baseUrl}${value.startsWith("/") ? value : `/${value}`}`;
+    if (updatedAt) {
+      url.searchParams.set("v", String(updatedAt.getTime()));
+    }
+
+    return url.toString();
+  } catch {
+    return logoUrl;
+  }
 }
 
 export async function generateMetadata(): Promise<Metadata> {
   const warehouseInfo = await getWarehouseInfoForLayout();
-
-  const siteName = warehouseInfo?.storeName || "Sparepart Warehouse";
+  const siteName = getWarehouseSiteName(warehouseInfo?.storeName);
 
   const location = [warehouseInfo?.city, warehouseInfo?.province]
     .filter(Boolean)
@@ -61,11 +50,7 @@ export async function generateMetadata(): Promise<Metadata> {
     ? `${siteName} - Warehouse stock management system in ${location}`
     : "Warehouse stock management system";
 
-  const logoUrl = warehouseInfo?.logoUrl
-    ? `${getAbsoluteUrl(warehouseInfo.logoUrl)}?v=${
-        warehouseInfo.updatedAt?.getTime() || Date.now()
-      }`
-    : "";
+  const logoUrl = getLogoUrl(warehouseInfo?.logoUrl, warehouseInfo?.updatedAt);
 
   return {
     title: {
@@ -76,38 +61,16 @@ export async function generateMetadata(): Promise<Metadata> {
     applicationName: siteName,
     icons: logoUrl
       ? {
-          icon: [
-            {
-              url: logoUrl,
-              type: "image/png",
-            },
-          ],
-          shortcut: [
-            {
-              url: logoUrl,
-              type: "image/png",
-            },
-          ],
-          apple: [
-            {
-              url: logoUrl,
-              type: "image/png",
-            },
-          ],
+          icon: [{ url: logoUrl }],
+          shortcut: [{ url: logoUrl }],
+          apple: [{ url: logoUrl }],
         }
       : undefined,
     openGraph: {
       title: siteName,
       description,
       type: "website",
-      images: logoUrl
-        ? [
-            {
-              url: logoUrl,
-              alt: siteName,
-            },
-          ]
-        : undefined,
+      images: logoUrl ? [{ url: logoUrl, alt: siteName }] : undefined,
     },
   };
 }
@@ -130,15 +93,9 @@ export default function RootLayout({
                   "Inter, system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif",
               },
               components: {
-                Button: {
-                  controlHeight: 40,
-                },
-                Input: {
-                  controlHeight: 40,
-                },
-                Select: {
-                  controlHeight: 40,
-                },
+                Button: { controlHeight: 40 },
+                Input: { controlHeight: 40 },
+                Select: { controlHeight: 40 },
               },
             }}
           >
