@@ -958,7 +958,7 @@ async function seedSuperadminOnce() {
     );
   }
 
-  if (password.length < 12 || Buffer.byteLength(password, "utf8") > 72) {
+  if (password.length < 11 || Buffer.byteLength(password, "utf8") > 72) {
     throw new Error("Password minimal 12 karakter dan maksimal 72 byte.");
   }
 
