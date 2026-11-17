@@ -22,6 +22,8 @@ import { signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import dayjs from "dayjs";
 
+import { useWarehouseSiteName } from "./warehouse-branding-provider";
+
 const { Header } = Layout;
 const { Text } = Typography;
 
@@ -41,7 +43,6 @@ type NotificationItem = {
 };
 
 type DashboardHeaderProps = {
-  siteName: string;
   userName?: string | null;
   roleName?: string | null;
 };
@@ -54,10 +55,8 @@ function getEventColor(eventType: string) {
   return "bg-slate-400";
 }
 
-export default function DashboardHeader({
-  siteName,
-  userName,
-}: DashboardHeaderProps) {
+export default function DashboardHeader({ userName }: DashboardHeaderProps) {
+  const siteName = useWarehouseSiteName();
   const router = useRouter();
   const [modal, contextHolder] = Modal.useModal();
 

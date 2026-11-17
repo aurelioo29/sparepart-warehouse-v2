@@ -1,7 +1,9 @@
 import type { Metadata } from "next";
+import type { ReactNode } from "react";
 import { AntdRegistry } from "@ant-design/nextjs-registry";
 import { App, ConfigProvider } from "antd";
 
+import WarehouseBrandingProvider from "@/components/dashboard/warehouse-branding-provider";
 import {
   getWarehouseInfoForLayout,
   getWarehouseSiteName,
@@ -11,7 +13,10 @@ import "./globals.css";
 
 function getLogoUrl(value?: string | null, updatedAt?: Date | null) {
   const logoUrl = value?.trim();
-  if (!logoUrl) return undefined;
+
+  if (!logoUrl) {
+    return undefined;
+  }
 
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL?.trim() ||
@@ -75,11 +80,12 @@ export async function generateMetadata(): Promise<Metadata> {
   };
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+}: Readonly<{ children: ReactNode }>) {
+  const warehouseInfo = await getWarehouseInfoForLayout();
+  const siteName = getWarehouseSiteName(warehouseInfo?.storeName);
+
   return (
     <html lang="id" suppressHydrationWarning>
       <body suppressHydrationWarning className="bg-slate-50 text-slate-900">
@@ -99,7 +105,11 @@ export default function RootLayout({
               },
             }}
           >
-            <App>{children}</App>
+            <App>
+              <WarehouseBrandingProvider siteName={siteName}>
+                {children}
+              </WarehouseBrandingProvider>
+            </App>
           </ConfigProvider>
         </AntdRegistry>
       </body>
