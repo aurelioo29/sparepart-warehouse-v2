@@ -41,6 +41,7 @@ type KngSalesReportRow = {
   customerAddress: string;
   salesmanName: string;
   monthlyTotals: Record<string, number>;
+  products: Map<string, { name: string; quantity: number }>;
 };
 type KngReportMonth = {
   key: string;
@@ -389,10 +390,11 @@ async function createKngSalesReportWorkbook(params: {
   const workbook = new ExcelJS.Workbook();
   workbook.creator = "Sparepart Warehouse";
   workbook.created = new Date();
+
   const worksheet = workbook.addWorksheet("Laporan Penjualan KNG", {
     pageSetup: {
       paperSize: 9,
-      orientation: params.months.length > 2 ? "landscape" : "portrait",
+      orientation: "landscape",
       fitToPage: true,
       fitToWidth: 1,
       fitToHeight: 0,
@@ -411,13 +413,17 @@ async function createKngSalesReportWorkbook(params: {
     { key: "no", width: 6 },
     { key: "customerName", width: 34 },
     { key: "customerAddress", width: 42 },
+    { key: "productName", width: 36 },
+    { key: "quantity", width: 10 },
     { key: "salesmanName", width: 18 },
     ...params.months.map((month) => ({
       key: month.key,
       width: 18,
     })),
   ];
-  const lastColumnNumber = 4 + params.months.length;
+
+  const firstMonthColumn = 7;
+  const lastColumnNumber = 6 + params.months.length;
   worksheet.mergeCells(1, 1, 1, lastColumnNumber);
   worksheet.getCell("A1").value = "Laporan Penjualan KNG";
   worksheet.getRow(1).height = 28;
@@ -430,12 +436,15 @@ async function createKngSalesReportWorkbook(params: {
     horizontal: "center",
     vertical: "middle",
   };
+
   const headerRowNumber = 3;
   const headerRow = worksheet.getRow(headerRowNumber);
   headerRow.values = [
     "No",
     "Nama Toko",
     "Alamat Toko",
+    "Nama Barang",
+    "Qty",
     "Sales / Ket",
     ...params.months.map((month) => month.label),
   ];
@@ -453,69 +462,110 @@ async function createKngSalesReportWorkbook(params: {
     cell.fill = {
       type: "pattern",
       pattern: "solid",
-      fgColor: {
-        argb: "FFB59B00",
-      },
+      fgColor: { argb: "FFB59B00" },
     };
     applyThinBorder(cell);
   });
+
   const sortedRows = [...params.rows].sort((a, b) => {
     const salesCompare = a.salesmanName.localeCompare(b.salesmanName);
     if (salesCompare !== 0) return salesCompare;
     return a.customerName.localeCompare(b.customerName);
   });
+
   let currentRowNumber = headerRowNumber + 1;
+  let totalQuantity = 0;
+  const salesmanRanges: Array<{ name: string; start: number; end: number }> =
+    [];
+
   sortedRows.forEach((item, index) => {
-    const row = worksheet.getRow(currentRowNumber);
-    row.values = [
-      index + 1,
-      item.customerName,
-      item.customerAddress,
-      item.salesmanName,
-      ...params.months.map((month) =>
-        formatRupiahText(item.monthlyTotals[month.key] || 0),
-      ),
-    ];
-    row.height = 36;
-    row.eachCell((cell, colNumber) => {
-      cell.font = {
-        name: "Times New Roman",
-        size: 14,
-      };
-      cell.alignment = {
-        horizontal:
-          colNumber === 1 ? "center" : colNumber >= 5 ? "right" : "left",
-        vertical: "middle",
-        wrapText: colNumber === 2 || colNumber === 3,
-      };
-      applyThinBorder(cell);
+    const products = [...item.products.values()].sort((a, b) =>
+      a.name.localeCompare(b.name, "id"),
+    );
+    // Tetap tampilkan toko bila ada invoice tanpa baris barang.
+    const itemRows =
+      products.length > 0 ? products : [{ name: "-", quantity: 0 }];
+    const startRowNumber = currentRowNumber;
+
+    itemRows.forEach((product, productIndex) => {
+      const row = worksheet.getRow(currentRowNumber);
+      const firstProduct = productIndex === 0;
+      row.values = [
+        firstProduct ? index + 1 : null,
+        firstProduct ? item.customerName : null,
+        firstProduct ? item.customerAddress : null,
+        product.name,
+        product.quantity,
+        firstProduct ? item.salesmanName : null,
+        ...params.months.map((month) =>
+          firstProduct
+            ? formatRupiahText(item.monthlyTotals[month.key] || 0)
+            : null,
+        ),
+      ];
+      row.height = 36;
+      row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+        cell.font = { name: "Times New Roman", size: 14 };
+        cell.alignment = {
+          horizontal:
+            colNumber === 1 || colNumber === 5
+              ? "center"
+              : colNumber >= firstMonthColumn
+                ? "right"
+                : "left",
+          vertical: "middle",
+          wrapText: colNumber === 2 || colNumber === 3 || colNumber === 4,
+        };
+        applyThinBorder(cell);
+      });
+      totalQuantity += product.quantity;
+      currentRowNumber += 1;
     });
-    currentRowNumber += 1;
-  });
-  /**
-   * Merge kolom Sales / Ket kalau salesman berurutan sama.
-   * Ini supaya bentuknya mirip contoh laporan manual yang kamu kirim.
-   */
-  if (sortedRows.length > 0) {
-    let groupStartRow = headerRowNumber + 1;
-    let activeSalesman = sortedRows[0].salesmanName;
-    for (let index = 1; index <= sortedRows.length; index += 1) {
-      const currentSalesman = sortedRows[index]?.salesmanName;
-      const isGroupEnd = currentSalesman !== activeSalesman;
-      if (isGroupEnd) {
-        const groupEndRow = headerRowNumber + index;
-        if (groupEndRow > groupStartRow) {
-          worksheet.mergeCells(`D${groupStartRow}:D${groupEndRow}`);
-          worksheet.getCell(`D${groupStartRow}`).alignment = {
-            horizontal: "center",
-            vertical: "middle",
-          };
-        }
-        groupStartRow = headerRowNumber + index + 1;
-        activeSalesman = currentSalesman || "";
+
+    const endRowNumber = currentRowNumber - 1;
+    if (endRowNumber > startRowNumber) {
+      // Satu toko bisa mempunyai banyak barang. Total per bulan milik toko,
+      // sehingga nilainya tidak diulang pada setiap baris barang.
+      for (const column of [1, 2, 3]) {
+        worksheet.mergeCells(startRowNumber, column, endRowNumber, column);
+      }
+      for (
+        let column = firstMonthColumn;
+        column <= lastColumnNumber;
+        column += 1
+      ) {
+        worksheet.mergeCells(startRowNumber, column, endRowNumber, column);
       }
     }
+    salesmanRanges.push({
+      name: item.salesmanName,
+      start: startRowNumber,
+      end: endRowNumber,
+    });
+  });
+
+  // Gabungkan nama salesman untuk seluruh toko yang berurutan sama.
+  let groupStart = 0;
+  while (groupStart < salesmanRanges.length) {
+    let groupEnd = groupStart;
+    while (
+      groupEnd + 1 < salesmanRanges.length &&
+      salesmanRanges[groupEnd + 1].name === salesmanRanges[groupStart].name
+    ) {
+      groupEnd += 1;
+    }
+    const firstRow = salesmanRanges[groupStart].start;
+    const lastRow = salesmanRanges[groupEnd].end;
+    if (lastRow > firstRow) {
+      worksheet.mergeCells(firstRow, 6, lastRow, 6);
+    }
+    worksheet.getCell(firstRow, 6).alignment = {
+      horizontal: "center",
+      vertical: "middle",
+    };
+    groupStart = groupEnd + 1;
   }
+
   const totalsByMonth = params.months.map((month) =>
     sortedRows.reduce(
       (sum, item) => sum + (item.monthlyTotals[month.key] || 0),
@@ -525,29 +575,31 @@ async function createKngSalesReportWorkbook(params: {
   const totalRowNumber = currentRowNumber;
   const totalRow = worksheet.getRow(totalRowNumber);
   totalRow.values = [
-    "",
     "Total",
     "",
+    "",
+    "",
+    totalQuantity,
     "",
     ...totalsByMonth.map((total) => formatRupiahText(total)),
   ];
   totalRow.height = 24;
   worksheet.mergeCells(`A${totalRowNumber}:D${totalRowNumber}`);
-  totalRow.eachCell((cell, colNumber) => {
+  totalRow.eachCell({ includeEmpty: true }, (cell, colNumber) => {
     cell.font = {
       name: "Times New Roman",
       size: 14,
       bold: true,
     };
     cell.alignment = {
-      horizontal: colNumber === 1 ? "center" : "right",
+      horizontal: colNumber <= 6 ? "center" : "right",
       vertical: "middle",
     };
     cell.fill = {
       type: "pattern",
       pattern: "solid",
       fgColor: {
-        argb: colNumber >= 5 ? "FFB59B00" : "FFFFFFFF",
+        argb: colNumber >= firstMonthColumn ? "FFB59B00" : "FFFFFFFF",
       },
     };
     applyThinBorder(cell);
@@ -559,14 +611,8 @@ async function createKngSalesReportWorkbook(params: {
     startCol: 1,
     endCol: lastColumnNumber,
   });
-  worksheet.views = [
-    {
-      state: "normal",
-      showGridLines: false,
-    },
-  ];
-  const buffer = await workbook.xlsx.writeBuffer();
-  return buffer;
+  worksheet.views = [{ state: "normal", showGridLines: false }];
+  return workbook.xlsx.writeBuffer();
 }
 function createExcelResponse(params: {
   buffer: ExcelJS.Buffer;
@@ -604,6 +650,15 @@ async function buildKngSalesReportRows(params: {
           name: true,
         },
       },
+      items: {
+        select: {
+          productId: true,
+          quantity: true,
+          product: {
+            select: { name: true },
+          },
+        },
+      },
     },
     orderBy: [
       {
@@ -633,7 +688,15 @@ async function buildKngSalesReportRows(params: {
       customerAddress,
       salesmanName: sale.salesman?.name || "-",
       monthlyTotals: {},
+      products: new Map<string, { name: string; quantity: number }>(),
     };
+    for (const item of sale.items) {
+      const previous = existing.products.get(item.productId);
+      existing.products.set(item.productId, {
+        name: item.product?.name || previous?.name || "Barang tanpa nama",
+        quantity: (previous?.quantity || 0) + item.quantity,
+      });
+    }
     if (sale.salesman?.name) {
       existing.salesmanName = sale.salesman.name;
     }
