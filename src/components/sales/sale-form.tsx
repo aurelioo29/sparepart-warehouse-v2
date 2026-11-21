@@ -657,9 +657,12 @@ export default function SaleForm({
       <Form.List name="items">
         {(fields, { add, remove }) => (
           <div className="overflow-hidden border border-slate-200 bg-white">
-            <div className="grid min-w-[1100px] grid-cols-12 border-b border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800">
-              <div className="col-span-5 border-r border-slate-200 px-3 py-3 text-center">
+            <div className="grid min-w-[1500px] grid-cols-12 border-b border-slate-200 bg-slate-50 text-sm font-semibold text-slate-800">
+              <div className="col-span-4 border-r border-slate-200 px-3 py-3 text-center">
                 Product
+              </div>
+              <div className="col-span-1 border-r border-slate-200 px-3 py-3 text-center">
+                Harga Jual
               </div>
               <div className="col-span-1 border-r border-slate-200 px-3 py-3 text-center">
                 Qty
@@ -692,7 +695,7 @@ export default function SaleForm({
                 return (
                   <div
                     key={key}
-                    className="grid min-w-[1100px] grid-cols-12 border-b border-slate-200 bg-white last:border-b-0"
+                    className="grid min-w-[1500px] grid-cols-12 border-b border-slate-200 bg-white last:border-b-0"
                   >
                     <Form.Item name={[name, "warehouseId"]} hidden>
                       <Input />
@@ -702,11 +705,7 @@ export default function SaleForm({
                       <Input />
                     </Form.Item>
 
-                    <Form.Item {...restField} name={[name, "unitPrice"]} hidden>
-                      <InputNumber />
-                    </Form.Item>
-
-                    <div className="col-span-5 border-r border-slate-200 px-3 py-3">
+                    <div className="col-span-4 border-r border-slate-200 px-3 py-3">
                       <Form.Item
                         {...restField}
                         name={[name, "productId"]}
@@ -752,14 +751,37 @@ export default function SaleForm({
                           <span>|</span>
 
                           <span>
-                            Unit Price:{" "}
-                            {formatCurrency(
-                              currentItem?.unitPrice ??
-                                selectedProduct.sellingPrice,
-                            )}
+                            Harga katalog:{" "}
+                            {formatCurrency(selectedProduct.sellingPrice)}
                           </span>
                         </div>
                       ) : null}
+                    </div>
+
+                    <div className="col-span-1 border-r border-slate-200 px-3 py-3">
+                      <Form.Item
+                        {...restField}
+                        name={[name, "unitPrice"]}
+                        className="mb-0"
+                        rules={[
+                          { required: true, message: "Harga jual wajib diisi" },
+                          {
+                            type: "number",
+                            min: 0,
+                            message: "Harga jual tidak boleh negatif",
+                          },
+                        ]}
+                      >
+                        <InputNumber<number>
+                          min={0}
+                          precision={0}
+                          className="dashboard-filter-control money-input w-full"
+                          controls={false}
+                          placeholder="Rp 0"
+                          formatter={formatRupiahInput}
+                          parser={parseRupiahInput}
+                        />
+                      </Form.Item>
                     </div>
 
                     <div className="col-span-1 border-r border-slate-200 px-3 py-3">
