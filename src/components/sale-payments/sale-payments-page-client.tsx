@@ -18,6 +18,7 @@ import type { ColumnsType, TablePaginationConfig } from "antd/es/table";
 import type { SorterResult } from "antd/es/table/interface";
 import {
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   EyeOutlined,
   PlusOutlined,
@@ -88,6 +89,22 @@ type SalePaymentsResponse = {
   };
 };
 
+type PaymentFilters = {
+  search: string;
+  saleId: string;
+  method: string;
+  dateFrom: string;
+  dateTo: string;
+};
+
+const emptyFilters: PaymentFilters = {
+  search: "",
+  saleId: "",
+  method: "",
+  dateFrom: "",
+  dateTo: "",
+};
+
 const paymentMethodOptions = [
   { label: "Cash", value: "CASH" },
   { label: "Transfer", value: "TRANSFER" },
@@ -135,7 +152,7 @@ function getPaymentPercent(record: SalePaymentItem) {
   const settlementDiscount = getSaleSettlementDiscount(record.sale);
   const settledAmount = paidAmount + settlementDiscount;
 
-  if (!totalAmount || totalAmount <= 0) return 0;
+  if (totalAmount <= 0) return 0;
 
   return Math.min(Math.round((settledAmount / totalAmount) * 100), 100);
 }
@@ -166,7 +183,9 @@ export default function SalePaymentsPageClient() {
   const [unpaidSales, setUnpaidSales] = useState<UnpaidSaleOption[]>([]);
 
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
+  // Nilai yang sedang diketik/dipilih pengguna.
   const [search, setSearch] = useState("");
   const [saleId, setSaleId] = useState("");
   const [method, setMethod] = useState("");
@@ -174,11 +193,15 @@ export default function SalePaymentsPageClient() {
     [dayjs.Dayjs | null, dayjs.Dayjs | null] | null
   >(null);
 
+  // Filter yang benar-benar sedang digunakan oleh tabel dan ekspor.
+  const [appliedFilters, setAppliedFilters] =
+    useState<PaymentFilters>(emptyFilters);
+
   const [page, setPage] = useState(1);
   const [limit, setLimit] = useState(10);
-
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const [columnOpen, setColumnOpen] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<string[]>(
@@ -213,59 +236,133 @@ export default function SalePaymentsPageClient() {
     }
   }
 
-  async function fetchPayments(params?: {
-    page?: number;
-    limit?: number;
-    search?: string;
-    saleId?: string;
-    method?: string;
-    dateFrom?: string;
-    dateTo?: string;
-    sortBy?: string;
-    sortOrder?: "asc" | "desc";
-  }) {
+  useEffect(() => {
+    void fetchUnpaidSales();
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function loadPayments() {
+      try {
+        setLoading(true);
+
+        const query = new URLSearchParams({
+          page: String(page),
+          limit: String(limit),
+          search: appliedFilters.search,
+          saleId: appliedFilters.saleId,
+          method: appliedFilters.method,
+          dateFrom: appliedFilters.dateFrom,
+          dateTo: appliedFilters.dateTo,
+          sortBy,
+          sortOrder,
+        });
+
+        const response = await fetch(`/api/sale-payments?${query.toString()}`, {
+          signal: controller.signal,
+        });
+
+        const result = await response.json();
+
+        if (!response.ok || !result.success) {
+          throw new Error(result.message || "Failed to fetch sale payments");
+        }
+
+        const data: SalePaymentsResponse = result.data;
+
+        setPayments(data.items || []);
+        setMeta(data.meta);
+      } catch (error) {
+        if (controller.signal.aborted) return;
+
+        console.error(error);
+
+        message.error(
+          error instanceof Error ? error.message : "Gagal mengambil pembayaran",
+        );
+      } finally {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      }
+    }
+
+    void loadPayments();
+
+    return () => controller.abort();
+  }, [page, limit, sortBy, sortOrder, appliedFilters, refreshKey]);
+
+  function handleSearch() {
+    setPage(1);
+
+    setAppliedFilters({
+      search: search.trim(),
+      saleId,
+      method,
+      dateFrom: dateRange?.[0] ? dateRange[0].format("YYYY-MM-DD") : "",
+      dateTo: dateRange?.[1] ? dateRange[1].format("YYYY-MM-DD") : "",
+    });
+  }
+
+  function handleReset() {
+    setSearch("");
+    setSaleId("");
+    setMethod("");
+    setDateRange(null);
+    setPage(1);
+    setAppliedFilters({ ...emptyFilters });
+  }
+
+  function handleRefresh() {
+    setRefreshKey((current) => current + 1);
+    void fetchUnpaidSales();
+  }
+
+  async function handleExport() {
     try {
-      setLoading(true);
+      setExporting(true);
 
-      const dateFrom =
-        params?.dateFrom ??
-        (dateRange?.[0] ? dateRange[0].format("YYYY-MM-DD") : "");
+      const query = new URLSearchParams(appliedFilters);
 
-      const dateTo =
-        params?.dateTo ??
-        (dateRange?.[1] ? dateRange[1].format("YYYY-MM-DD") : "");
+      const response = await fetch(
+        `/api/sale-payments/export?${query.toString()}`,
+        { cache: "no-store" },
+      );
 
-      const query = new URLSearchParams({
-        page: String(params?.page ?? page),
-        limit: String(params?.limit ?? limit),
-        search: params?.search ?? search,
-        saleId: params?.saleId ?? saleId,
-        method: params?.method ?? method,
-        dateFrom,
-        dateTo,
-        sortBy: params?.sortBy ?? sortBy,
-        sortOrder: params?.sortOrder ?? sortOrder,
-      });
+      if (!response.ok) {
+        const result = await response.json().catch(() => null);
 
-      const response = await fetch(`/api/sale-payments?${query.toString()}`);
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        throw new Error(result.message || "Failed to fetch sale payments");
+        throw new Error(result?.message || "Gagal mengekspor pembayaran");
       }
 
-      const data: SalePaymentsResponse = result.data;
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
 
-      setPayments(data.items || []);
-      setMeta(data.meta);
+      const disposition = response.headers.get("Content-Disposition");
+      const filename =
+        disposition?.match(/filename="([^"]+)"/)?.[1] ||
+        "pembayaran-sales.xlsx";
+
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filename;
+
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+
+      message.success("Data pembayaran berhasil diekspor");
     } catch (error) {
       console.error(error);
 
       message.error(
-        error instanceof Error ? error.message : "Gagal mengambil pembayaran",
+        error instanceof Error ? error.message : "Gagal mengekspor pembayaran",
       );
     } finally {
-      setLoading(false);
+      setExporting(false);
     }
   }
 
@@ -289,7 +386,7 @@ export default function SalePaymentsPageClient() {
 
       message.success(result.message || "Sale payment deleted successfully");
 
-      await fetchPayments();
+      setRefreshKey((current) => current + 1);
       await fetchUnpaidSales();
     } catch (error) {
       console.error(error);
@@ -298,55 +395,6 @@ export default function SalePaymentsPageClient() {
         error instanceof Error ? error.message : "Gagal menghapus pembayaran",
       );
     }
-  }
-
-  useEffect(() => {
-    void fetchUnpaidSales();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
-    void fetchPayments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, limit, sortBy, sortOrder]);
-
-  function handleSearch() {
-    setPage(1);
-
-    void fetchPayments({
-      page: 1,
-      search,
-      saleId,
-      method,
-      dateFrom: dateRange?.[0] ? dateRange[0].format("YYYY-MM-DD") : "",
-      dateTo: dateRange?.[1] ? dateRange[1].format("YYYY-MM-DD") : "",
-      sortBy,
-      sortOrder,
-    });
-  }
-
-  function handleReset() {
-    setSearch("");
-    setSaleId("");
-    setMethod("");
-    setDateRange(null);
-    setPage(1);
-
-    void fetchPayments({
-      page: 1,
-      search: "",
-      saleId: "",
-      method: "",
-      dateFrom: "",
-      dateTo: "",
-      sortBy,
-      sortOrder,
-    });
-  }
-
-  function handleRefresh() {
-    void fetchPayments();
-    void fetchUnpaidSales();
   }
 
   function handleTableChange(
@@ -454,7 +502,6 @@ export default function SalePaymentsPageClient() {
         align: "right",
         render: (value, record) => {
           const percent = getPaymentPercent(record);
-
           const paymentDiscount = Number(record.discountAmount || 0);
           const settlementAmount = Number(value || 0) + paymentDiscount;
 
@@ -622,6 +669,8 @@ export default function SalePaymentsPageClient() {
     visibleColumns.includes(String(column.key)),
   );
 
+  const hasAppliedFilters = Object.values(appliedFilters).some(Boolean);
+
   return (
     <div className="text-sm">
       <div className="form-compact mb-4 border border-slate-100 bg-white p-4">
@@ -711,12 +760,22 @@ export default function SalePaymentsPageClient() {
       <div>
         <div className="mb-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-slate-500">
-            {search || saleId || method || dateRange
-              ? "Filter applied"
-              : "No filter applied"}
+            {hasAppliedFilters ? "Filter applied" : "No filter applied"}
           </div>
 
           <Space wrap size={8}>
+            <Button
+              size="small"
+              icon={<DownloadOutlined />}
+              loading={exporting}
+              disabled={loading || meta.total === 0}
+              onClick={() => {
+                void handleExport();
+              }}
+            >
+              Export Excel
+            </Button>
+
             <Button
               size="small"
               type="primary"
